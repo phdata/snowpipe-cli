@@ -8,7 +8,7 @@ package provided by Snowflake, although it probably should, especially if the `i
 script.
 
 The `snowflake-ingest` package does bring many additional dependencies, but it has more robust error handling and retry.
-Furthermore, since it is maintained by Snowflake, it should be less likely to breakages due to changes in the REST APIs.
+Furthermore, since it is maintained by Snowflake, it should be less likely to break due to changes in the REST APIs.
 
 The script also provides a JWT generator that can be used without calling specific endpoints in the event that you
 simply need a JWT for some other adhoc use.
@@ -24,7 +24,7 @@ Install the prerequisites:
 pip install -r requirements.txt
 ```
 
-You will need to create a config file with the Snowflake credentials and account information. See
+Create a config file with the Snowflake credentials and account information. See
 the [example config](example-config.yaml) for details. 
 
 The `account` value must not include the region and cloud if
