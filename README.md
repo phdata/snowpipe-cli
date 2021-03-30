@@ -13,18 +13,30 @@ Furthermore, since it is maintained by Snowflake, it should be less likely to br
 The script also provides a JWT generator that can be used without calling specific endpoints in the event that you
 simply need a JWT for some other adhoc use.
 
-## Usage
 
-Install the prerequisites
+## Requirements
+
+The script requires Python3.6+, but has only been tested on Python 3.9.
+
+Install the prerequisites:
 
 ```shell
 pip install -r requirements.txt
 ```
 
 You will need to create a config file with the Snowflake credentials and account information. See
-the [example config](example-config.yaml) for details.
+the [example config](example-config.yaml) for details. 
+
+The `account` value must not include the region and cloud if
+present in the Snowflake URL. The `url_prefix` must include the any portion of the subdomains prior
+to `snowflakecomputing.com`. For example, if your URL is https://tacos.us-east-2.azure.snowflakecomputing.com, then
+the `account` will be `tacos` and the `url_prefix` will be `tacos.us-east-2.azure`.
+
+
+## Usage
 
 Show the script help, including all the subcommands:
+
 ```shell
 ./snowpipe.py -h
 ```
