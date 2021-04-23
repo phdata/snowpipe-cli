@@ -147,7 +147,9 @@ def parse_ingest(args):
     if args.file:
         all_files.extend(args.file)
     if args.files:
-        all_files.extend(args.files)
+        with open(args.files) as infile:
+            names = (name.strip() for name in infile.readlines() if name.strip())
+        all_files.extend(names)
 
     logger.debug('Files to ingest:\n%s', '\n'.join(all_files))
     if not all_files:
@@ -186,7 +188,8 @@ def parse_args():
 
     ingest_parser = subparsers.add_parser('ingest', help='Call the ingest endpoint')
     ingest_parser.add_argument('pipe', help='The pipe to invoke')
-    ingest_parser.add_argument('-f', '--file', action='append', help='A staged file to ingest')
+    ingest_parser.add_argument('-f', '--file', action='append',
+                               help='A staged file to ingest. May be specified multiple times.')
     ingest_parser.add_argument('--files', help='A path to a file where each line is a staged file to ingest')
     ingest_parser.set_defaults(func=parse_ingest)
 
