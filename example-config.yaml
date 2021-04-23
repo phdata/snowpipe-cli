@@ -1,4 +1,4 @@
-url_prefix: PHDATA
+url: phdata.snowflakecomputing.com
 account: PHDATA
 user: USER
 key_fp: SHA256:something_from_snowflake_user

@@ -1,18 +1,11 @@
 # Snowpipe CLI
 
 Snowpipe CLI provides access to
-the [Snowpipe REST API](https://docs.snowflake.com/en/user-guide/data-load-snowpipe-rest-apis.html) via the CLI.
-Currently, only the load history report endpoints are available. The script does not use
-the [snowflake-ingest](https://pypi.org/project/snowflake-ingest/)
-package provided by Snowflake, although it probably should, especially if the `insertFiles` endpoint is added to the CLI
-script.
+the [Snowpipe REST API](https://docs.snowflake.com/en/user-guide/data-load-snowpipe-rest-apis.html) via the CLI. The
+script uses the [snowflake-ingest](https://github.com/snowflakedb/snowflake-ingest-python) python package to call the
+REST endpoints.
 
-The `snowflake-ingest` package does bring many additional dependencies, but it has more robust error handling and retry.
-Furthermore, since it is maintained by Snowflake, it should be less likely to break due to changes in the REST APIs.
-
-The script also provides a JWT generator that can be used without calling specific endpoints in the event that you
-simply need a JWT for some other adhoc use.
-
+There is also a JWT generator that you can use to simply generate a JWT for adhoc use.
 
 ## Requirements
 
@@ -25,13 +18,11 @@ pip install -r requirements.txt
 ```
 
 Create a config file with the Snowflake credentials and account information. See
-the [example config](example-config.yaml) for details. 
+the [example config](example-config.yaml) for details.
 
-The `account` value must not include the region and cloud if
-present in the Snowflake URL. The `url_prefix` must include the any portion of the subdomains prior
-to `snowflakecomputing.com`. For example, if your URL is https://tacos.us-east-2.azure.snowflakecomputing.com, then
-the `account` will be `tacos` and the `url_prefix` will be `tacos.us-east-2.azure`.
-
+The `account` value must not include the region and cloud if present in the Snowflake URL. The `url` is the URL of the
+Snowflake instance minus the scheme. For example, if your URL is https://tacos.us-east-2.azure.snowflakecomputing.com,
+then the `account` will be `tacos` and the `url` will be `tacos.us-east-2.azure.snowflakecomputing.com`.
 
 ## Usage
 
@@ -44,7 +35,7 @@ Show the script help, including all the subcommands:
 Show subcommand help:
 
 ```shell
-./snowpipe.py <subcommand> -h
+./snowpipe.py <config_file> <subcommand> -h
 ```
 
 Run a subcommand:

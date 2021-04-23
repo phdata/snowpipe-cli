@@ -5,15 +5,15 @@ from datetime import datetime, timedelta
 
 import jwt
 import logging
-import requests
 import uuid
 import yaml
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+from snowflake.ingest import SimpleIngestManager, StagedFile
 
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
+logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
 logger = logging.getLogger()
 
 
@@ -26,9 +26,9 @@ class Config:
             content = yaml.safe_load(infile)
             return Config(**content)
 
-    def __init__(self, url_prefix, account, user, key_fp, key_file, key_password=None):
+    def __init__(self, url, account, user, key_fp, key_file, key_password=None):
         self.logger = logging.getLogger(self.__class__.__name__)
-        self.url_prefix = url_prefix.lower()
+        self.url = url.lower()
         self.account = account.upper()
         self.user = user.upper()
         self.key_fp = key_fp
@@ -39,22 +39,24 @@ class Config:
     @property
     def private_key(self):
         if self._private_key is None:
-            self.logger.debug('Reading private key file: %s', self.key_file)
+            self.logger.debug(f'Reading private key file: {self.key_file}')
             with open(self.key_file) as infile:
                 content = infile.read()
                 pw_bytes = None
                 if self.key_password:
                     pw_bytes = self.key_password.encode('utf-8')
-                self._private_key = serialization.load_pem_private_key(content.encode('utf-8'), password=pw_bytes,
-                                                                       backend=default_backend())
+                private_key = serialization.load_pem_private_key(content.encode('utf-8'), password=pw_bytes,
+                                                                 backend=default_backend())
+                self._private_key = private_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())\
+                    .decode('utf-8')
         return self._private_key
 
     def generate_jwt(self, seconds=None):
         if seconds is None:
             seconds = self.EXPIRATION_SECONDS
         payload = {
-          'iss': '{}.{}.{}'.format(self.account, self.user, self.key_fp),
-          'sub': '{}.{}'.format(self.account, self.user),
+          'iss': f'{self.account}.{self.user}.{self.key_fp}',
+          'sub': f'{self.account}.{self.user}',
           'iat': datetime.utcnow(),
           'exp': datetime.utcnow() + timedelta(seconds=seconds)
         }
@@ -65,48 +67,49 @@ class Config:
 
 
 class SnowpipeApi:
-    URL_TEMPLATE = 'https://{}.snowflakecomputing.com/v1/data/pipes/{}'
 
-    def __init__(self, config):
+    def __init__(self, config, pipe):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
-
-    def _headers(self):
-        token = self.config.generate_jwt()
-        return {
-            'Authorization': 'BEARER {}'.format(token),
-        }
-
-    def _url(self, endpoint, pipe):
-        return self.URL_TEMPLATE.format(self.config.url_prefix, pipe) + '/' + endpoint
-
-    def report(self, pipe, begin_mark=None):
-        params = {
-            'requestId': str(uuid.uuid4()),
-        }
-        if begin_mark:
-            params['beginMark'] = begin_mark
-        response = requests.get(
-            self._url('insertReport', pipe),
-            headers=self._headers(),
-            params=params,
+        self.ingest_manager = SimpleIngestManager(
+            account=self.config.account,
+            host=self.config.url,
+            user=self.config.user,
+            private_key=self.config.private_key,
+            pipe=pipe,
         )
-        body = response.json()
+
+    def report(self, recent_seconds: int = None):
+        request_id = uuid.uuid4()
+        self.logger.debug(f'request_id: {request_id}')
+        body = self.ingest_manager.get_history(
+            recent_seconds=recent_seconds,
+            request_id=request_id
+        )
         print(json.dumps(body, indent=4))
 
-    def history(self, pipe, start_time: datetime, end_time: datetime = None):
-        params = {
-            'requestId': str(uuid.uuid4()),
-            'startTimeInclusive': start_time.isoformat(),
-        }
-        if end_time:
-            params['endTimeExclusive'] = end_time.isoformat()
-        response = requests.get(
-            self._url('loadHistoryScan', pipe),
-            headers=self._headers(),
-            params=params,
+    def history(self, start_time: datetime, end_time: datetime = None):
+        if not start_time:
+            raise ValueError('start_time must be defined')
+        request_id = uuid.uuid4()
+        self.logger.debug(f'request_id: {request_id}')
+        body = self.ingest_manager.get_history_range(
+            start_time_inclusive=start_time.isoformat(),
+            end_time_exclusive=end_time.isoformat() if end_time else None,
+            request_id=request_id
         )
-        body = response.json()
+        print(json.dumps(body, indent=4))
+
+    def ingest(self, files):
+        if not files:
+            raise ValueError('files must be defined')
+        request_id = uuid.uuid4()
+        self.logger.debug(f'request_id: {request_id}')
+        staged_files = [StagedFile(name, None) for name in files]
+        body = self.ingest_manager.ingest_files(
+            staged_files=staged_files,
+            request_id=request_id,
+        )
         print(json.dumps(body, indent=4))
 
 
@@ -126,19 +129,38 @@ def parse_jwt(args):
 
 def parse_report(args):
     config = Config.create(args.config_file)
-    api = SnowpipeApi(config)
-    api.report(args.pipe, begin_mark=args.begin_mark)
+    api = SnowpipeApi(config, args.pipe)
+    api.report(recent_seconds=args.recent_seconds)
 
 
 def parse_history(args):
     config = Config.create(args.config_file)
-    api = SnowpipeApi(config)
-    api.history(args.pipe, start_time=args.start_time, end_time=args.end_time)
+    api = SnowpipeApi(config, args.pipe)
+    api.history(start_time=args.start_time, end_time=args.end_time)
+
+
+def parse_ingest(args):
+    config = Config.create(args.config_file)
+    api = SnowpipeApi(config, args.pipe)
+
+    all_files = []
+    if args.file:
+        all_files.extend(args.file)
+    if args.files:
+        with open(args.files) as infile:
+            names = (name.strip() for name in infile.readlines() if name.strip())
+        all_files.extend(names)
+
+    logger.debug('Files to ingest:\n%s', '\n'.join(all_files))
+    if not all_files:
+        raise ValueError('At least one file must be provided')
+    api.ingest(all_files)
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Make requests to the Snowpipe REST APIs')
     parser.add_argument('config_file', help='Path to a YAML config file')
+    parser.add_argument('-i', '--info', help='Enable info logging', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debug logging', action='store_true')
 
     subparsers = parser.add_subparsers(help='Sub-commands')
@@ -146,14 +168,14 @@ def parse_args():
     jwt_parser = subparsers.add_parser('jwt', help='Generate and print JWT')
     jwt_parser.add_argument(
         '--expiration-seconds',
-        help='JWT token expiration time in seconds. Default is {}.'.format(Config.EXPIRATION_SECONDS),
+        help=f'JWT token expiration time in seconds. Default is {Config.EXPIRATION_SECONDS}.',
         default=Config.EXPIRATION_SECONDS
     )
     jwt_parser.set_defaults(func=parse_jwt)
 
     report_parser = subparsers.add_parser('report', help='Call the insertReport endpoint')
     report_parser.add_argument('pipe', help='The pipe to retrieve a report for')
-    report_parser.add_argument('--begin-mark', help='The begin mark')
+    report_parser.add_argument('--recent-seconds', help='The number of seconds to go back')
     report_parser.set_defaults(func=parse_report)
 
     history_parser = subparsers.add_parser('history', help='Call the loadHistoryScan endpoint')
@@ -162,14 +184,24 @@ def parse_args():
                                 help='The start time (inclusive) for the history in ISO-8601 format ')
     history_parser.add_argument('--end-time', action=DateAction,
                                 help='The end time (exclusive) for the history in ISO-8601 format')
-    history_parser.add_argument('--begin-mark', help='The begin mark')
     history_parser.set_defaults(func=parse_history)
+
+    ingest_parser = subparsers.add_parser('ingest', help='Call the ingest endpoint')
+    ingest_parser.add_argument('pipe', help='The pipe to invoke')
+    ingest_parser.add_argument('-f', '--file', action='append',
+                               help='A staged file to ingest. May be specified multiple times.')
+    ingest_parser.add_argument('--files', help='A path to a file where each line is a staged file to ingest')
+    ingest_parser.set_defaults(func=parse_ingest)
 
     args = parser.parse_args()
 
     if args.debug:
         logger.setLevel(level=logging.DEBUG)
         logger.debug('Debug logging enabled')
+    elif args.info:
+        logger.setLevel(level=logging.INFO)
+        logger.debug('Info logging enabled')
+
     args.func(args)
 
 
