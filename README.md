@@ -17,8 +17,18 @@ Install the prerequisites:
 pip install -r requirements.txt
 ```
 
-Create a config file with the Snowflake credentials and account information. See
-the [example config](example-config.yaml) for details.
+Create a config file with the Snowflake credentials and account information. 
+
+```yaml
+url: phdata.snowflakecomputing.com
+account: PHDATA
+user: USER
+key_fp: SHA256:something_from_snowflake_user
+key_file: /path/to/user/private/key.pem
+key_password: optional_password
+```
+
+See also [example config](example-config.yaml).
 
 The `account` value must not include the region and cloud if present in the Snowflake URL. The `url` is the URL of the
 Snowflake instance minus the scheme. For example, if your URL is https://tacos.us-east-2.azure.snowflakecomputing.com,
@@ -26,7 +36,7 @@ then the `account` will be `tacos` and the `url` will be `tacos.us-east-2.azure.
 
 ## Usage
 
-Show the script help, including all the subcommands:
+Show the script help, including the subcommands:
 
 ```shell
 ./snowpipe.py -h
@@ -35,17 +45,17 @@ Show the script help, including all the subcommands:
 Show subcommand help:
 
 ```shell
-./snowpipe.py <config_file> <subcommand> -h
+./snowpipe.py <subcommand> -h
 ```
 
 Run a subcommand:
 
 ```shell
-./snowpipe.py <config_file> <subcommand>
+./snowpipe.py <subcommand> <config_file> <other_args>...
 ```
 
 Enable debug logging:
 
 ```shell
-./snowpipe.py -d <config_file> <subcommand>
+./snowpipe.py -d <subcommand> <config_file>
 ```
