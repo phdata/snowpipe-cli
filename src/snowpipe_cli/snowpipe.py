@@ -157,7 +157,7 @@ def parse_ingest(args):
     api.ingest(all_files)
 
 
-def parse_args():
+def cli():
     parser = argparse.ArgumentParser(description='Make requests to the Snowpipe REST APIs')
     parser.add_argument('config_file', help='Path to a YAML config file')
     parser.add_argument('-i', '--info', help='Enable info logging', action='store_true')
@@ -206,4 +206,4 @@ def parse_args():
 
 
 if __name__ == '__main__':
-    parse_args()
+    cli()
