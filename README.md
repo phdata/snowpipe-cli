@@ -7,17 +7,25 @@ REST endpoints.
 
 There is also a JWT generator that you can use to simply generate a JWT for adhoc use.
 
-## Requirements
+## Installation
+
+You can install the latest version with pip
+
+```shell
+pip install snowpipe-cli
+```
+
+**Note**: If you are installing into a virtual environment, you may need to deactivate and activate again in order for
+the `snowpipe` command to work correctly from your shell.
+
+### Requirements
 
 The script requires Python3.6+, but has only been tested on Python 3.9.
 
-Install the prerequisites:
 
-```shell
-pip install -r requirements.txt
-```
+### Configuration
 
-Create a config file with the Snowflake credentials and account information. 
+Create a config file with the Snowflake credentials and account information. The config file must be YAML like below:
 
 ```yaml
 url: phdata.snowflakecomputing.com
@@ -34,28 +42,44 @@ The `account` value must not include the region and cloud if present in the Snow
 Snowflake instance minus the scheme. For example, if your URL is https://tacos.us-east-2.azure.snowflakecomputing.com,
 then the `account` will be `tacos` and the `url` will be `tacos.us-east-2.azure.snowflakecomputing.com`.
 
+To generate a private key,
+see [Key Pair Authentication & Key Pair Rotation](https://docs.snowflake.com/en/user-guide/key-pair-auth.html). When
+verifying the fingerprint, record the value into the `key_fp` YAML key.
+
 ## Usage
+
+The commands below are examples of calling the `snowpipe` script from your shell after it has been installed with pip.
+If you have cloned the repository, you can also invoke the script from its parent directory with `./snowpipe.py`, or you
+can run from the `src` directory with `python -m snowpipe_cli`.
 
 Show the script help, including the subcommands:
 
 ```shell
-./snowpipe.py -h
+snowpipe -h
 ```
 
 Show subcommand help:
 
 ```shell
-./snowpipe.py <subcommand> -h
+snowpipe <subcommand> -h
 ```
 
 Run a subcommand:
 
 ```shell
-./snowpipe.py <subcommand> <config_file> <other_args>...
+snowpipe <subcommand> <config_file> <other_args>...
 ```
 
 Enable debug logging:
 
 ```shell
-./snowpipe.py -d <subcommand> <config_file>
+snowpipe -d <subcommand> <config_file>
+```
+
+## Contributing
+
+Install the prerequisites:
+
+```shell
+pip install -r requirements.txt
 ```
