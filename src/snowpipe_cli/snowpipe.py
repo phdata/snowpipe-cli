@@ -159,13 +159,13 @@ def parse_ingest(args):
 
 def cli():
     parser = argparse.ArgumentParser(description='Make requests to the Snowpipe REST APIs')
-    parser.add_argument('config_file', help='Path to a YAML config file')
     parser.add_argument('-i', '--info', help='Enable info logging', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debug logging', action='store_true')
 
     subparsers = parser.add_subparsers(help='Sub-commands')
 
     jwt_parser = subparsers.add_parser('jwt', help='Generate and print JWT')
+    jwt_parser.add_argument('config_file', help='Path to a YAML config file')
     jwt_parser.add_argument(
         '--expiration-seconds',
         help=f'JWT token expiration time in seconds. Default is {Config.EXPIRATION_SECONDS}.',
@@ -174,11 +174,13 @@ def cli():
     jwt_parser.set_defaults(func=parse_jwt)
 
     report_parser = subparsers.add_parser('report', help='Call the insertReport endpoint')
+    report_parser.add_argument('config_file', help='Path to a YAML config file')
     report_parser.add_argument('pipe', help='The pipe to retrieve a report for')
     report_parser.add_argument('--recent-seconds', help='The number of seconds to go back')
     report_parser.set_defaults(func=parse_report)
 
     history_parser = subparsers.add_parser('history', help='Call the loadHistoryScan endpoint')
+    history_parser.add_argument('config_file', help='Path to a YAML config file')
     history_parser.add_argument('pipe', help='The pipe to retrieve history for')
     history_parser.add_argument('start_time', action=DateAction,
                                 help='The start time (inclusive) for the history in ISO-8601 format ')
@@ -187,6 +189,7 @@ def cli():
     history_parser.set_defaults(func=parse_history)
 
     ingest_parser = subparsers.add_parser('ingest', help='Call the ingest endpoint')
+    ingest_parser.add_argument('config_file', help='Path to a YAML config file')
     ingest_parser.add_argument('pipe', help='The pipe to invoke')
     ingest_parser.add_argument('-f', '--file', action='append',
                                help='A staged file to ingest. May be specified multiple times.')
