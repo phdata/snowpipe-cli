@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import sys
 from datetime import datetime, timedelta
 
 import jwt
@@ -162,7 +163,7 @@ def cli():
     parser.add_argument('-i', '--info', help='Enable info logging', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debug logging', action='store_true')
 
-    subparsers = parser.add_subparsers(help='Sub-commands')
+    subparsers = parser.add_subparsers(help='Sub-commands', dest='command')
 
     jwt_parser = subparsers.add_parser('jwt', help='Generate and print JWT')
     jwt_parser.add_argument('config_file', help='Path to a YAML config file')
@@ -197,6 +198,11 @@ def cli():
     ingest_parser.set_defaults(func=parse_ingest)
 
     args = parser.parse_args()
+
+    if not args.command:
+        print('A subcommand must be specified')
+        parser.print_help()
+        sys.exit(1)
 
     if args.debug:
         logger.setLevel(level=logging.DEBUG)
