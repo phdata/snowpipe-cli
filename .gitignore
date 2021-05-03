@@ -4,3 +4,9 @@
 .vscode/
 
 .DS_Store
+
+*.egg-info/
+*.py[oc]
+
+build/
+dist/
