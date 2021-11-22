@@ -83,3 +83,19 @@ Install the prerequisites:
 ```shell
 pip install -r requirements.txt
 ```
+
+Build the package in the `dist` directory
+
+```shell
+
+python3 -m build
+```
+
+Upload to pypi
+
+```shell
+twine upload --repository pypi dist/*
+```
+
+
+
