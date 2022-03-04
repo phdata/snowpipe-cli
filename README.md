@@ -20,7 +20,7 @@ the `snowpipe` command to work correctly from your shell.
 
 ### Requirements
 
-The script requires Python3.6+, but has only been tested on Python 3.9.
+Snowpipe CLI requires Python 3.8+.
 
 
 ### Configuration
