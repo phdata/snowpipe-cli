@@ -10,7 +10,7 @@ from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
 from functools import cached_property
 from types import TracebackType
-from typing import Optional, Type
+from typing import Optional, Type, Iterable
 
 import jwt
 import snowflake.connector
@@ -29,12 +29,13 @@ class Config:
     EXPIRATION_SECONDS = 3600
 
     @staticmethod
-    def create(config_file):
+    def create(config_file: str):
         with open(config_file) as infile:
             content = yaml.safe_load(infile)
             return Config(**content)
 
-    def __init__(self, url, account, user, key_fp, key_file, key_password=None):
+    def __init__(self, url: str, account: str, user: str, key_fp: str, key_file: str,
+                 key_password: Optional[str] = None) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.url = url.lower()
         self.account = account.upper()
@@ -43,7 +44,7 @@ class Config:
         self.key_file = key_file
         self.key_password = key_password
 
-    def _read_private_key_file(self, key_encoding) -> bytes:
+    def _read_private_key_file(self, key_encoding: Encoding) -> bytes:
         self.logger.debug(f'Reading private key file: {self.key_file}')
         with open(self.key_file) as infile:
             content = infile.read()
@@ -62,7 +63,7 @@ class Config:
     def private_key_pem(self) -> str:
         return self._read_private_key_file(Encoding.PEM).decode('utf-8')
 
-    def generate_jwt(self, seconds=None):
+    def generate_jwt(self, seconds: Optional[int] = None) -> bytes:
         if seconds is None:
             seconds = self.EXPIRATION_SECONDS
         payload = {
@@ -80,7 +81,7 @@ class Config:
 class PipeStage(AbstractContextManager):
     COPY_PATTERN = re.compile(r"^copy into .+ from ('?@[^\s-]+'?)", re.IGNORECASE | re.MULTILINE)
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: Config) -> None:
         if not config:
             raise ValueError('config must be defined')
         self.config = config
@@ -104,7 +105,7 @@ class PipeStage(AbstractContextManager):
             private_key=self.config.private_key_der,
         )
 
-    def get_pipe_stage(self, pipe) -> str:
+    def get_pipe_stage(self, pipe: str) -> str:
         with self.conn.cursor(DictCursor) as cur:
             result = cur.execute(f'desc pipe {pipe}').fetchone()
         definition = result['definition']
@@ -113,7 +114,7 @@ class PipeStage(AbstractContextManager):
             raise RuntimeError(f'Failed to find stage in pipe definition: {definition}')
         return match.group(1)
 
-    def use_schema(self, name):
+    def use_schema(self, name: str) -> None:
         with self.conn.cursor() as cur:
             cur.execute(f'use schema {name}')
 
@@ -138,7 +139,7 @@ class PipeStage(AbstractContextManager):
 
 
 class SnowpipeApi:
-    def __init__(self, config, pipe):
+    def __init__(self, config: Config, pipe: str) -> None:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
         self.ingest_manager = SimpleIngestManager(
@@ -149,7 +150,7 @@ class SnowpipeApi:
             pipe=pipe,
         )
 
-    def report(self, recent_seconds: int = None):
+    def report(self, recent_seconds: Optional[int] = None) -> None:
         request_id = uuid.uuid4()
         self.logger.debug(f'request_id: {request_id}')
         body = self.ingest_manager.get_history(
@@ -158,7 +159,7 @@ class SnowpipeApi:
         )
         print(json.dumps(body, indent=4))
 
-    def history(self, start_time: datetime, end_time: datetime = None):
+    def history(self, start_time: datetime, end_time: Optional[datetime] = None) -> None:
         if not start_time:
             raise ValueError('start_time must be defined')
         request_id = uuid.uuid4()
@@ -170,7 +171,7 @@ class SnowpipeApi:
         )
         print(json.dumps(body, indent=4))
 
-    def ingest(self, files):
+    def ingest(self, files: Iterable[str]) -> None:
         if not files:
             raise ValueError('files must be defined')
         request_id = uuid.uuid4()
@@ -192,24 +193,24 @@ class DateAction(argparse.Action):
         setattr(namespace, self.dest, d)
 
 
-def parse_jwt(args):
+def parse_jwt(args: argparse.Namespace) -> None:
     config = Config.create(args.config_file)
     print(config.generate_jwt(args.expiration_seconds))
 
 
-def parse_report(args):
+def parse_report(args: argparse.Namespace) -> None:
     config = Config.create(args.config_file)
     api = SnowpipeApi(config, args.pipe)
     api.report(recent_seconds=args.recent_seconds)
 
 
-def parse_history(args):
+def parse_history(args: argparse.Namespace) -> None:
     config = Config.create(args.config_file)
     api = SnowpipeApi(config, args.pipe)
     api.history(start_time=args.start_time, end_time=args.end_time)
 
 
-def parse_ingest(args):
+def parse_ingest(args: argparse.Namespace) -> None:
     config = Config.create(args.config_file)
     pipe = args.pipe
     api = SnowpipeApi(config, pipe)
@@ -238,14 +239,14 @@ def parse_ingest(args):
     api.ingest(all_files)
 
 
-def parse_pipe(args):
+def parse_pipe(args: argparse.Namespace) -> None:
     config = Config.create(args.config_file)
     with PipeStage(config) as pipe_stage:
         stage = pipe_stage.get_pipe_stage(args.pipe)
     print(stage)
 
 
-def cli():
+def cli() -> None:
     parser = argparse.ArgumentParser(description='Make requests to the Snowpipe REST APIs')
     parser.add_argument('-i', '--info', help='Enable info logging', action='store_true')
     parser.add_argument('-d', '--debug', help='Enable debug logging', action='store_true')
