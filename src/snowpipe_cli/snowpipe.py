@@ -1,17 +1,24 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import logging
+import os
+import re
 import sys
+import uuid
+from contextlib import AbstractContextManager
 from datetime import datetime, timedelta
+from functools import cached_property
+from types import TracebackType
+from typing import Optional, Type
 
 import jwt
-import logging
-import uuid
+import snowflake.connector
 import yaml
-
-from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+from snowflake.connector import DictCursor, SnowflakeConnection
 from snowflake.ingest import SimpleIngestManager, StagedFile
 
 logging.basicConfig(level=logging.WARNING, format='%(asctime)s %(name)-12s %(levelname)-8s %(message)s')
@@ -35,40 +42,102 @@ class Config:
         self.key_fp = key_fp
         self.key_file = key_file
         self.key_password = key_password
-        self._private_key = None
 
-    @property
-    def private_key(self):
-        if self._private_key is None:
-            self.logger.debug(f'Reading private key file: {self.key_file}')
-            with open(self.key_file) as infile:
-                content = infile.read()
-                pw_bytes = None
-                if self.key_password:
-                    pw_bytes = self.key_password.encode('utf-8')
-                private_key = serialization.load_pem_private_key(content.encode('utf-8'), password=pw_bytes,
-                                                                 backend=default_backend())
-                self._private_key = private_key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())\
-                    .decode('utf-8')
-        return self._private_key
+    def _read_private_key_file(self, key_encoding) -> bytes:
+        self.logger.debug(f'Reading private key file: {self.key_file}')
+        with open(self.key_file) as infile:
+            content = infile.read()
+        pw_bytes = None
+        if self.key_password:
+            pw_bytes = self.key_password.encode('utf-8')
+        private_key = serialization.load_pem_private_key(content.encode('utf-8'), password=pw_bytes,
+                                                         backend=default_backend())
+        return private_key.private_bytes(key_encoding, PrivateFormat.PKCS8, NoEncryption())
+
+    @cached_property
+    def private_key_der(self) -> bytes:
+        return self._read_private_key_file(Encoding.DER)
+
+    @cached_property
+    def private_key_pem(self) -> str:
+        return self._read_private_key_file(Encoding.PEM).decode('utf-8')
 
     def generate_jwt(self, seconds=None):
         if seconds is None:
             seconds = self.EXPIRATION_SECONDS
         payload = {
-          'iss': f'{self.account}.{self.user}.{self.key_fp}',
-          'sub': f'{self.account}.{self.user}',
-          'iat': datetime.utcnow(),
-          'exp': datetime.utcnow() + timedelta(seconds=seconds)
+            'iss': f'{self.account}.{self.user}.{self.key_fp}',
+            'sub': f'{self.account}.{self.user}',
+            'iat': datetime.utcnow(),
+            'exp': datetime.utcnow() + timedelta(seconds=seconds)
         }
         return jwt.encode(
-           payload,
-           self.private_key,
-           'RS256')
+            payload,
+            self.private_key_pem,
+            'RS256')
+
+
+class PipeStage(AbstractContextManager):
+    COPY_PATTERN = re.compile(r"^copy into .+ from ('?@[^\s-]+'?)", re.IGNORECASE | re.MULTILINE)
+
+    def __init__(self, config) -> None:
+        if not config:
+            raise ValueError('config must be defined')
+        self.config = config
+        self.conn: SnowflakeConnection = None
+
+    def __enter__(self):
+        if self.conn is None:
+            self.conn = self._connection()
+        return self
+
+    def __exit__(self, __exc_type: Type[BaseException], __exc_value: BaseException,
+                 __traceback: TracebackType) -> bool:
+        if self.conn:
+            self.conn.close()
+            self.conn = None
+
+    def _connection(self) -> SnowflakeConnection:
+        return snowflake.connector.connect(
+            account=self.config.account,
+            user=self.config.user,
+            private_key=self.config.private_key_der,
+        )
+
+    def get_pipe_stage(self, pipe) -> str:
+        with self.conn.cursor(DictCursor) as cur:
+            result = cur.execute(f'desc pipe {pipe}').fetchone()
+        definition = result['definition']
+        match = self.COPY_PATTERN.match(definition)
+        if not match:
+            raise RuntimeError(f'Failed to find stage in pipe definition: {definition}')
+        return match.group(1)
+
+    def use_schema(self, name):
+        with self.conn.cursor() as cur:
+            cur.execute(f'use schema {name}')
+
+    def put_file(self, file_path: str, stage_path: str, *,
+                 auto_compress: Optional[bool] = None,
+                 overwrite: Optional[bool] = None,
+                 parallel: Optional[int] = None,
+                 source_compression: Optional[str] = None) -> str:
+        stmt = f'put file://{file_path} {stage_path}'
+        if auto_compress is not None:
+            stmt += f' auto_compress = {auto_compress}'
+        if overwrite is not None:
+            stmt += f' overwrite = {overwrite}'
+        if parallel is not None:
+            stmt += f' parallel = {parallel}'
+        if source_compression is not None:
+            stmt += f' source_compression = {source_compression}'
+
+        with self.conn.cursor(DictCursor) as cur:
+            result = cur.execute(stmt).fetchone()
+            return result['target']
 
 
 class SnowpipeApi:
-
     def __init__(self, config, pipe):
         self.logger = logging.getLogger(self.__class__.__name__)
         self.config = config
@@ -76,7 +145,7 @@ class SnowpipeApi:
             account=self.config.account,
             host=self.config.url,
             user=self.config.user,
-            private_key=self.config.private_key,
+            private_key=self.config.private_key_pem,
             pipe=pipe,
         )
 
@@ -142,7 +211,8 @@ def parse_history(args):
 
 def parse_ingest(args):
     config = Config.create(args.config_file)
-    api = SnowpipeApi(config, args.pipe)
+    pipe = args.pipe
+    api = SnowpipeApi(config, pipe)
 
     all_files = []
     if args.file:
@@ -152,10 +222,27 @@ def parse_ingest(args):
             names = (name.strip() for name in infile.readlines() if name.strip())
         all_files.extend(names)
 
+    if args.local_file:
+        with PipeStage(config) as pipe_stage:
+            stage = pipe_stage.get_pipe_stage(pipe)
+            pipe_stage.use_schema(pipe[0:pipe.rindex('.')])
+            for local_file in args.local_file:
+                stage_path = ''
+                stage_location = os.path.join(stage, stage_path)
+                stage_file = pipe_stage.put_file(local_file, stage_location)
+                all_files.append(os.path.join(stage_path, stage_file))
+
     logger.debug('Files to ingest:\n%s', '\n'.join(all_files))
     if not all_files:
         raise ValueError('At least one file must be provided')
     api.ingest(all_files)
+
+
+def parse_pipe(args):
+    config = Config.create(args.config_file)
+    with PipeStage(config) as pipe_stage:
+        stage = pipe_stage.get_pipe_stage(args.pipe)
+    print(stage)
 
 
 def cli():
@@ -195,7 +282,14 @@ def cli():
     ingest_parser.add_argument('-f', '--file', action='append',
                                help='A staged file to ingest. May be specified multiple times.')
     ingest_parser.add_argument('--files', help='A path to a file where each line is a staged file to ingest')
+    ingest_parser.add_argument('-l', '--local-file', action='append',
+                               help='A local file to stage then ingest. May be specified multiple times.')
     ingest_parser.set_defaults(func=parse_ingest)
+
+    pipe_parser = subparsers.add_parser('pipe', help='Grab the stage for the pipe')
+    pipe_parser.add_argument('config_file', help='Path to a YAML config file')
+    pipe_parser.add_argument('pipe', help='The pipe to invoke')
+    pipe_parser.set_defaults(func=parse_pipe)
 
     args = parser.parse_args()
 
@@ -209,7 +303,7 @@ def cli():
         logger.debug('Debug logging enabled')
     elif args.info:
         logger.setLevel(level=logging.INFO)
-        logger.debug('Info logging enabled')
+        logger.info('Info logging enabled')
 
     args.func(args)
 
