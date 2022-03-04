@@ -79,7 +79,7 @@ class Config:
 
 
 class PipeStage(AbstractContextManager):
-    COPY_PATTERN = re.compile(r"^copy into .+ from ('?@[^\s]+'?)", re.IGNORECASE | re.MULTILINE)
+    COPY_PATTERN = re.compile(r"^copy\s+into\s+.+\s+from\s+('?@[^\s]+'?)", re.IGNORECASE | re.MULTILINE)
 
     def __init__(self, config: Config) -> None:
         if not config:
