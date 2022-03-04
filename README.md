@@ -5,6 +5,11 @@ the [Snowpipe REST API](https://docs.snowflake.com/en/user-guide/data-load-snowp
 script uses the [snowflake-ingest](https://github.com/snowflakedb/snowflake-ingest-python) python package to call the
 REST endpoints.
 
+In addition to calling the Snowpipe REST endpoints, you can use Snowpipe CLI
+to [PUT](https://docs.snowflake.com/en/sql-reference/sql/put.html) local files in the stage used by the pipe and then
+ingest. A single invocation of the ingest command handles any combination of already staged files and local files that
+need to be staged.
+
 There is also a JWT generator that you can use to simply generate a JWT for adhoc use.
 
 ## Installation
@@ -21,7 +26,6 @@ the `snowpipe` command to work correctly from your shell.
 ### Requirements
 
 Snowpipe CLI requires Python 3.8+.
-
 
 ### Configuration
 
