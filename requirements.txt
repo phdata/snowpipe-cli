@@ -1,4 +1,4 @@
-cryptography~=44.0.2
-PyYAML~=5.4.1
-snowflake-connector-python~=3.13.1
-snowflake-ingest~=1.0.3
+cryptography~=46.0.0
+PyYAML~=6.0.0
+snowflake-connector-python~=4.0.0
+snowflake-ingest~=1.0.12
